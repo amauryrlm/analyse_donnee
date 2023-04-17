@@ -1,0 +1,140 @@
+---
+title: "projet"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-04-11"
+---
+
+
+## Importation des données
+```{r}
+data <- read.csv("Train_data.csv")
+data
+data$class<-as.factor(data$class)
+data$protocol_type<-as.factor(data$protocol_type)
+data$flag<-as.factor(data$flag)
+
+unique(app$land)
+unique(app$num_shells)
+unique(app$num_outbound_cmds)
+unique(app$is_host_login)
+
+library(dplyr)
+
+# assume your data frame is called 'df'
+data <- data %>% select(-land, -num_shells, -num_outbound_cmds, -is_host_login)
+
+
+
+set.seed(5678)
+perm <- sample(4601,3000)
+app <- data[perm,]
+valid <- data[-perm,]
+head(app)
+```
+
+
+
+
+## random forest
+```{r}
+library("randomForest")
+set.seed(1234)
+foret <- randomForest(class~.,data=app)
+foret
+```
+```{r}
+plot(foret)
+```
+
+```{r}
+tail(foret$err.rate)
+```
+
+```{r}
+prev.valid<-predict(foret,newdata=valid)
+prev.valid[1:10]
+```
+```{r}
+pred_RF <- predict(foret,newdata=valid, type="class")
+pred_numeric <- as.numeric(pred_RF)
+
+library("pROC")
+auc <- roc(valid$class, pred_numeric)$auc
+auc
+```
+```{r}
+var.imp<-foret$importance
+ord <- order(var.imp,decreasing = TRUE)
+barplot(sort(var.imp,decreasing = TRUE)[1:12], names.arg=rownames(var.imp)[ord][1:12],cex.names=0.3)
+```
+
+
+
+```{r}
+var.imp <- as.data.frame(var.imp)
+var.imp.df <- cbind(variables = rownames(var.imp),var.imp)
+var.imp.df <- var.imp[order(var.imp$MeanDecreaseGini, decreasing = TRUE),]
+rownames(var.imp.df) <- NULL
+head(var.imp.df,10)
+
+
+```
+
+### src_bytes 	number of data bytes from source to destination 
+
+## gradient boosting
+
+
+
+
+```{r}
+library(gbm)
+app2<-app
+valid2 <- valid
+app2$service<-as.factor(app2$service)
+valid2$service<-as.factor(valid2$service)
+
+app2$class <- ifelse(app2$class == "normal", 1, 0)
+valid2$class <- ifelse(valid2$class == "normal", 1, 0)
+
+```
+
+
+```{r}
+head(valid2)
+```
+
+```{r}
+mod.ada<-gbm(class~., data=app2, distribution="adaboost", shrinkage=0.01,n.trees=3000,cv.folds = 5)
+
+
+```
+
+```{r}
+print(mod.ada)
+```
+
+```{r}
+prev.ada <- predict(mod.ada,newdata=valid,type = "response")
+prev.ada <- round(prev.ada)
+auc.ada <- roc(valid2$class, prev.ada)$auc
+auc.ada
+
+```
+
+```{r}
+summary(mod.ada)[1:10,]
+
+```
+# regression Logistique
+
+```{r}
+mod.reg <- glm(class ~ ., family = binomial , data=app2)
+summary(mod.reg)
+```
+
+
+
+
