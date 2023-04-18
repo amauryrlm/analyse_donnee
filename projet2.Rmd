@@ -33,6 +33,12 @@ barplot(table(train[,"class"]))
 library(FactoMineR)
 res.pca <- PCA(train,quali.sup = c(2,3,4,42))
 ```
+
+
+```{r}
+plot(res.pca,choix="var",cex=0.8)
+```
+
 ```{r}
 res.pca$eig
 ```

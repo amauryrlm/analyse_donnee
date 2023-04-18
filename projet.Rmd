@@ -48,4 +48,25 @@ plot(res.pca ,choix = "ind", habillage = 42)
 ```{r}
 dimdesc(res.pca, proba = 0.05)
 ```
+```{r}
+# Load the iris dataset
+data(iris)
+
+# Create a training and testing dataset
+set.seed(123)
+train_idx <- sample(nrow(iris), 0.7 * nrow(iris))
+train_data <- iris[train_idx, ]
+test_data <- iris[-train_idx, ]
+
+# Fit a DFA model to predict the species based on the petal length and width variables
+library(MASS)
+model <- lda(Species ~ Petal.Length + Petal.Width, data = train_data)
+
+# Predict the species of the test data using the model
+pred <- predict(model, newdata = test_data)
+
+# Evaluate the accuracy of the predictions
+mean(pred$class == test_data$Species)
+
+```
 

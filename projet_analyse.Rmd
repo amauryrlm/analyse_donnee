@@ -9,24 +9,109 @@ date: "2023-04-11"
 
 ## Importation des données
 ```{r}
-data <- read.csv("Train_data.csv")
-data
+data <- read.csv("data/Train_data.csv")
+
+head(data)
+
+```
+
+## Preparation du dataset
+
+```{r}
+
+#transform categorical variable into factor
 data$class<-as.factor(data$class)
 data$protocol_type<-as.factor(data$protocol_type)
 data$flag<-as.factor(data$flag)
+#data$service<-as.factor(data$service)
 
-unique(app$land)
-unique(app$num_shells)
-unique(app$num_outbound_cmds)
-unique(app$is_host_login)
+#faire doublons et outliers
+
+
+data
+
+```
+
+
+```{r}
+table(data$land) #refere to if the connection comes from the intranet
+table(data$class[data$land == 1])
+
+
+#The hypotheses of the Fisher's exact test are the same than for the Chi-square test, that is: H0 : the variables are independent, there is no relationship between the two categorical variables.
+tab.cont.land <- xtabs(~class+land,data=data)
+resultat.fisher.land <- fisher.test(tab.cont.land)
+resultat.fisher.land
+
+
+table(data$num_shells)
+table(data$class[data$num_shells == 1])
+
+tab.cont.num_shells <- xtabs(~class+num_shells,data=data)
+resultat.fisher.num_shells <- fisher.test(tab.cont.num_shells)
+resultat.fisher.num_shells
+
+
+
+table(data$num_outbound_cmds)
+table(data$is_host_login)
 
 library(dplyr)
+```
 
-# assume your data frame is called 'df'
-data <- data %>% select(-land, -num_shells, -num_outbound_cmds, -is_host_login)
+La taille des échantillons sont petites nous allons donc utiliser le test exact de fisher.
+
+Pour land la p-value est supérieur à 0.05 donc nous conservons H0.On considère que land ne dépend pas de class. Nous allons donc retier la variable du dataset.
+
+Pour num_shells la p-value est inférieur au seil de 5% nous pouvons donc rejeter H0 et considérons que num_shells depend de class.
+
+
+Les variables num_outbound_cmds et is_host_login sont constantes nous pouvons donc les retier.
+
+
+```{r}
+data <- subset(data, select = -land)
+data <- subset(data, select = -num_outbound_cmds)
+data <- subset(data, select = -is_host_login)
+data <- subset(data, select = -num_shells)
+```
+
+```{r}
+length(unique(data$service))
+#because service has 62 categories and random forest supports up to 53 we tranform the variable into numerical 
+#we will do label encoding
+data$service <- as.numeric(factor(data$service))
+
+
+#essayer de mettre 66 categories
+
+```
+
+# Analyse descriptive
+
+```{r}
+
+mytable <- table(train[,"class"])
+prop_table <- prop.table(mytable)
+label_percentages <- paste(names(prop_table), round(prop_table * 100, 1), "%", sep = " ")
+pie(mytable, labels = label_percentages, col = c("red","green"))
+
+```
+
+g
+
+```{r}
+barplot(table(train[,"flag"]),main="flag")
+pie(table(train[,"protocol_type"]))
+
+```
 
 
 
+Nous séparons le dataset en 2 pour avoir une partie pour entrainer les modèles et une autre pour les tester
+
+
+```{r}
 set.seed(5678)
 perm <- sample(4601,3000)
 app <- data[perm,]
@@ -36,36 +121,129 @@ head(app)
 
 
 
+# LDA
 
-## random forest
+```{r}
+library(MASS)
+model.lda <- lda(class~.,data=app) 
+
+```
+
+
+## Prédiction
+
+```{r}
+pred_lda <- predict(model.lda,newdata=valid)$class
+
+```
+
+## Accuracy
+
+```{r}
+
+accuracy.lda = mean(pred_lda==valid$class)
+accuracy.lda
+
+```
+## aire sous courbe ROC
+```{r}
+library("pROC")
+pred_numeric_lda <- predict(model.lda,newdata=valid)$posterior[,2]
+auc.lda <- roc(valid$class, pred_numeric_lda)$auc
+auc.lda
+```
+
+# Arbre Optimal
+
+```{r}
+library(rpart)
+library(rpart.plot)
+set.seed(1)
+arbre <- rpart(class~. ,app,control=rpart.control(minsplit=5,cp=0))
+printcp(arbre)
+
+```
+
+
+
+
+```{r}
+plotcp(arbre)
+```
+```{r}
+cp.opt <- arbre$cptable[which.min(arbre$cptable[, "xerror"]), "CP"] 
+arbre.opt <- prune(arbre,cp.opt) 
+rpart.plot(arbre.opt, type=4)
+```
+## Prediction
+```{r}
+pred_arbre <- predict(arbre.opt,newdata=valid, type="class")
+
+```
+## Accuracy
+```{r}
+accuracy.arbre = mean(pred_arbre==valid$class)
+accuracy.arbre
+```
+
+## aire sous courbe ROC
+```{r}
+library("pROC")
+pred_numeric <- predict(arbre.opt,newdata=valid)[,2]
+auc.rf <- roc(valid$class, pred_numeric)$auc
+auc.rf
+```
+
+
+
+# random forest
 ```{r}
 library("randomForest")
 set.seed(1234)
-foret <- randomForest(class~.,data=app)
-foret
+
+
+model.rf <- randomForest(class~.,data=app)
+model.rf
 ```
 ```{r}
-plot(foret)
+plot(model.rf)
 ```
 
 ```{r}
-tail(foret$err.rate)
+tail(model.rf$err.rate)
+```
+## Prediction
+```{r}
+pred_forest <- predict(model.rf,newdata=valid, type="class")
+
 ```
 
+
 ```{r}
-prev.valid<-predict(foret,newdata=valid)
-prev.valid[1:10]
+table(pred_forest,valid$class)
 ```
+
+
+## Accuracy
 ```{r}
-pred_RF <- predict(foret,newdata=valid, type="class")
-pred_numeric <- as.numeric(pred_RF)
+accuracy.arbre = mean(pred_forest==valid$class)
+accuracy.arbre
+```
+
+
+
+## validation
+```{r}
 
 library("pROC")
-auc <- roc(valid$class, pred_numeric)$auc
-auc
+
+pred_numeric <- predict(model.rf, valid, type="prob")[,2]
+auc.rf <- roc(valid$class, pred_numeric)$auc
+auc.rf
 ```
 ```{r}
-var.imp<-foret$importance
+var.imp<-model.rf$importance
+var.imp
 ord <- order(var.imp,decreasing = TRUE)
 barplot(sort(var.imp,decreasing = TRUE)[1:12], names.arg=rownames(var.imp)[ord][1:12],cex.names=0.3)
 ```
@@ -84,9 +262,15 @@ head(var.imp.df,10)
 
 ### src_bytes 	number of data bytes from source to destination 
 
-## gradient boosting
 
 
+
+
+
+
+
+
+# gradient boosting
 
 
 ```{r}
@@ -102,9 +286,6 @@ valid2$class <- ifelse(valid2$class == "normal", 1, 0)
 ```
 
 
-```{r}
-head(valid2)
-```
 
 ```{r}
 mod.ada<-gbm(class~., data=app2, distribution="adaboost", shrinkage=0.01,n.trees=3000,cv.folds = 5)
@@ -117,6 +298,7 @@ print(mod.ada)
 ```
 
 ```{r}
+library("pROC")
 prev.ada <- predict(mod.ada,newdata=valid,type = "response")
 prev.ada <- round(prev.ada)
 auc.ada <- roc(valid2$class, prev.ada)$auc
@@ -132,7 +314,24 @@ summary(mod.ada)[1:10,]
 
 ```{r}
 mod.reg <- glm(class ~ ., family = binomial , data=app2)
-summary(mod.reg)
+```
+```{r}
+data
+```
+
+
+```{r}
+library(glmnet)
+
+lasso <- glmnet(as.matrix(app[,1:37]),app[,38],family="binomial",alpha=0)
+```
+
+
+
+```{r}
+model.log.asso <- glmnet(as.matrix(app[,-1]),app$class,family='binomial')
+cvLasso <- cv.glmnet(as.matrix(app[,-1]),app$class,family="binomial", type.measure = "class")
+plot(cvLasso)
 ```
 
 
