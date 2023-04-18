@@ -1,8 +1,9 @@
 ---
 title: "projet"
 output:
-  pdf_document: default
+  word_document: default
   html_document: default
+  pdf_document: default
 date: "2023-04-11"
 ---
 
@@ -11,7 +12,6 @@ date: "2023-04-11"
 ```{r}
 data <- read.csv("data/Train_data.csv")
 
-head(data)
 
 ```
 
@@ -27,8 +27,6 @@ data$flag<-as.factor(data$flag)
 
 #faire doublons et outliers
 
-
-data
 
 ```
 
@@ -91,7 +89,7 @@ data$service <- as.numeric(factor(data$service))
 
 ```{r}
 
-mytable <- table(train[,"class"])
+mytable <- table(data[,"class"])
 prop_table <- prop.table(mytable)
 label_percentages <- paste(names(prop_table), round(prop_table * 100, 1), "%", sep = " ")
 pie(mytable, labels = label_percentages, col = c("red","green"))
@@ -101,8 +99,8 @@ pie(mytable, labels = label_percentages, col = c("red","green"))
 g
 
 ```{r}
-barplot(table(train[,"flag"]),main="flag")
-pie(table(train[,"protocol_type"]))
+barplot(table(data[,"flag"]),main="flag")
+pie(table(data[,"protocol_type"]))
 
 ```
 
@@ -116,7 +114,7 @@ set.seed(5678)
 perm <- sample(4601,3000)
 app <- data[perm,]
 valid <- data[-perm,]
-head(app)
+
 ```
 
 
@@ -315,9 +313,7 @@ summary(mod.ada)[1:10,]
 ```{r}
 mod.reg <- glm(class ~ ., family = binomial , data=app2)
 ```
-```{r}
-data
-```
+
 
 
 ```{r}
@@ -329,9 +325,9 @@ lasso <- glmnet(as.matrix(app[,1:37]),app[,38],family="binomial",alpha=0)
 
 
 ```{r}
-model.log.asso <- glmnet(as.matrix(app[,-1]),app$class,family='binomial')
-cvLasso <- cv.glmnet(as.matrix(app[,-1]),app$class,family="binomial", type.measure = "class")
-plot(cvLasso)
+#model.log.asso <- glmnet(as.matrix(app[,-1]),app$class,family='binomial')
+#cvLasso <- cv.glmnet(as.matrix(app[,-1]),app$class,family="binomial", type.measure = "class")
+#plot(cvLasso)
 ```
 
 
