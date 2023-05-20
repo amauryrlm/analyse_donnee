@@ -30,7 +30,7 @@ library(FactoMineR)
 ```{r}
 data <- read.csv("data/Train_data.csv")
 head(data)
-summary(data)
+str(data)
 ```
 
 ## Préparation du dataset
@@ -207,12 +207,19 @@ La régression logistique a pour but d'expliquer et de prédire les valeurs d'un
 ```
 
 
+
+
+
+
+
+
+
 # b) LDA
 
 ```{r}
 
 model.lda <- lda(class~.,data=app ) 
-model.lda
+
 plot(model.lda)
 
 #prediction
@@ -283,8 +290,8 @@ table(pred_forest,valid$class)
 
 ## Accuracy
 
-accuracy.arbre = mean(pred_forest==valid$class)
-accuracy.arbre
+accuracy.rf = mean(pred_forest==valid$class)
+accuracy.rf
 
 
 ## validation
@@ -327,14 +334,22 @@ print(mod.ada)
 
 prev.ada <- predict(mod.ada,newdata=valid,type = "response")
 prev.ada <- round(prev.ada)
+prev.ada
+accuracy.ada = mean(prev.ada==valid2$class)
+accuracy.ada
+
 roc.ada <- roc(valid2$class, prev.ada)
 roc.ada
-plot(roc.ada)
 
 
 summary(mod.ada)[1:10,]
 
 ```
+
+```{r}
+valid2$class
+```
+
 
 
 # f) regression Logistique
@@ -367,6 +382,15 @@ accuracy_logit_lasso
 # Comparaison
 
 
+```{r}
+result=matrix(NA, ncol=5, nrow=2)
+rownames(result)=c('accuracy', 'AUC')
+colnames(result)=c('lda','arbre optimal','random forest','adaboost','lasso')
+result[1,]= c(accuracy.lda, accuracy.arbre, accuracy.rf, accuracy.ada,accuracy_logit_lasso)
+result[2,]= c(roc.lda$auc,roc.aopt$auc, roc.rf$auc, roc.ada$auc, roc.lasso$auc )
+result
+```
+
 
 ```{r}
 plot(roc.lda,xlim=c(1,0))
@@ -378,8 +402,50 @@ legend('bottom', col=1:5, paste(c('lda','arbre optimal','random forest','adaboos
 
 ```
 
+# ACP
+
+Nous observons un saut après la 2eme dimension, nous allons donc choisir 2 axes. Les 2 premiers axes expliquent 35.153% de l'inertie totale.
 
 
 
+```{r}
+res.pca <- PCA(app[,-38], quali.sup = c(2,3,4))
+barplot(res.pca$eig[,2],names=paste("Dim",1:nrow(res.pca$eig)))
+summary(res.pca, ncp=2)
+dimdesc(res.pca, proba = 0.2)
 
+```
+
+```{r}
+library(factoextra)
+var <- get_pca_var(res.pca)
+```
+
+
+```{r}
+library("corrplot")
+corr.acp <- corrplot(var$cos2, is.corr=FALSE)
+```
+
+
+
+```{r}
+fviz_pca_ind (res.pca,col.ind = app$class)
+```
+
+Nous observons que les connections anormals ont des valeurs plus élevées sur l'axe 1 et 2 . L'axe 1 est fortement corrélé à dst_host_srv_error_rate et host_srv_rerror_rate les connections anormales ont un taux plus élevé d'erreur des serveurs ce qui paraît fidèle à la réalite. De même pour l'axe 2 qui est fortement corrélé à reeror_rate et srv_rerror_rate.
+
+```{r}
+m <- cor(data[,c(-2,-3,-4,-38)])
+corrplot(m)
+```
+
+```{r}
+library(lares)
+
+corr_cross(data[,c(-2,-3,-4,-38)], # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 20 # display top 10 couples of variables (by correlation coefficient)
+)
+```
 
