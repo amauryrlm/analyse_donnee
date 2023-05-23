@@ -13,7 +13,8 @@ variables (38 quantitatives et 3 qualitatives). Le dataset représente les donn�
 un réseau informatique et comporte des informations telles que le type de connexion ou sa durée par exemple. On va ici s'intéresser à la variable "class" qui nous informe si la connexion est malveillante ou non.
 
   En effet, de nos jours il y a de plus en plus de cyber-attaques et donc de problèmes liés à la cyber-sécurité. Il devient très important de pouvoir étudier les diverses connexions et déterminer leur nature. Ce projet aura pour but de prédire la variable class, et nous étudierons les résultats obtenus afin de savoir si il est possible de déterminer la nature d'une connexion avec une assez bonne précision pour que l'analyse de données puisse être un outil utile dans ce domaine.
-```{r}
+  
+```{r,echo=FALSE,results = FALSE}
 library("pROC")
 library("MASS")
 library(rpart)
@@ -21,8 +22,11 @@ library(rpart.plot)
 library("randomForest")
 library(ggplot2)
 library(FactoMineR)
+library(glmnet)
 
 ```
+
+
 
 
 ## Importation & aperçu des données
@@ -49,7 +53,7 @@ doublons <- duplicated(data)
 
 Nous avons deux variables constantes (num_outbound_cmds & is_host_login) donc nous pourrons les enlever par la suite. De plus les variables land & num_shells sont quasiment constantes aussi donc nous les enleverons aussi.
 
-```{r}
+```{r,echo=FALSE,results = FALSE}
 print("land : ")
 table(data$land) #refere to if the connection comes from the intranet
 table(data$class[data$land == 1])
@@ -66,7 +70,7 @@ library(dplyr)
 ```
 Nous utilisons donc la commande subset() pour les retirer.
 
-```{r}
+```{r,echo=FALSE,results = FALSE}
 data <- subset(data, select = -land)
 data <- subset(data, select = -num_outbound_cmds)
 data <- subset(data, select = -is_host_login)
@@ -83,7 +87,7 @@ data$service <- as.numeric(factor(data$service))
 
 Dans cette section, nous allons faire l'analyse descriptive du jeu de données. On commence par visualiser le nombre de connexions malveillantes à l'aide des commandes ci-dessous.
 
-```{r}
+```{r, echo=FALSE}
 mytable <- table(data[,"class"])
 prop_table <- prop.table(mytable)
 label_percentages <- paste(names(prop_table), round(prop_table * 100, 1), "%", sep = " ")
@@ -91,7 +95,7 @@ pie(mytable, labels = label_percentages, col = c("red","green"))
 ```
 ### Les FLAG de statut de connection
 
-```{r}
+```{r, echo=FALSE}
 p1 <-ggplot(data) + aes(x=flag)+geom_bar(aes(fill=flag)) + labs(title = "Distribution des flags de connection")
 p1
 
@@ -103,9 +107,9 @@ chisq.test(data$class, data$flag)
 
 ### Le type de protocole
 
-Nous pouvons observer que la majorité des protocoles utilisés sont des tcp et en monorité des icmp et des udp. D'après le test de Fisher, Nous rejetons H0 et pouvons considérer que le type de protocole a un influence sur si la connection est normal ou non. En effet, les différents protocoles de connection ont des normes de sécurité différentes. UDP n'a pas de check de sécurité intégre.
+Nous pouvons observer que la majorité des protocoles utilisés sont des tcp et en monorité des icmp et des udp. D'après le test de Fisher, Nous rejetons H0 et pouvons considérer que le type de protocole a une influence sur la normalité de connexion. En effet, les différents protocoles de connection ont des normes de sécurité différentes. UDP n'a pas de check de sécurité intégre.
 
-```{r}
+```{r, echo=FALSE}
 p1 <-ggplot(data) + aes(x=protocol_type)+geom_bar(aes(fill=protocol_type)) + labs(title = "Distribution du type de protocole utilisé pour la connexion")
 p1
 
@@ -118,11 +122,15 @@ table(data$protocol_type, data$class)
 
 Nous séparons le dataset en 2 afin d'avoir une données de test après l'entrainement de nos modèles pour interpréter les résultats.
 
-```{r}
+```{r, echo=FALSE,results = FALSE}
 set.seed(5678)
-perm <- sample(4601,3000)
-app <- data[perm,]
-valid <- data[-perm,]
+n <- nrow(data)
+test.ratio <- .2 # ratio of test/train samples 
+n.test <- round(n*test.ratio)
+test.ratio <- .2
+perm <- sample(1:n,n.test) 
+app <- data[-perm,]
+valid <- data[perm,]
 ```
 Ensuite, nous refaisons appel à la fonction as.factor() pour les mêmes raisons que précedemment et en plus nous transformons la variable class en 0 & 1 car certaines méthodes liées aux différentes classifications requièrent des données numérique (1 sera pour les connexions normales et 0 les malveillantes).
 ```{r}
@@ -137,8 +145,56 @@ valid2$class <- ifelse(valid2$class == "normal", 1, 0)
 
 
 
+# ACP
 
-# PCA 
+Nous observons un saut après la 2eme dimension, nous allons donc choisir 2 axes. Les 2 premiers axes expliquent 35.153% de l'inertie totale.
+
+
+
+```{r,echo=FALSE,`results = FALSE`}
+res.pca <- PCA(app[,-38], quali.sup = c(2,3,4))
+barplot(res.pca$eig[,2],names=paste("Dim",1:nrow(res.pca$eig)))
+summary(res.pca, ncp=2)
+dimdesc(res.pca, proba = 0.2)
+
+```
+
+```{r, echo=FALSE}
+library(factoextra)
+var <- get_pca_var(res.pca)
+```
+Par aileurs, afin de mieux comprendre et visualiser le PCA nous avons fait appel à la bibliothèque (corrplot) qui permet d'avoir un tableau indiquant l'importance de chaque variable associée à certaine dimension.
+
+```{r, echo=FALSE}
+library("corrplot")
+corr.acp <- corrplot(var$cos2, is.corr=FALSE)
+```
+
+Ici, plus le point est foncé, plus la variable est importante dans la dimension. Le résultat concorde bien avec ce que nous observions plus haut. En effet, ...variables anormales... axe 1 etc....
+
+```{r, echo=FALSE, echo=FALSE}
+fviz_pca_ind (res.pca,col.ind = app$class)
+```
+
+
+Nous observons que les connections anormals ont des valeurs plus élevées sur l'axe 1 et 2 . L'axe 1 est fortement corrélé à dst_host_srv_error_rate et host_srv_rerror_rate les connections anormales ont un taux plus élevé d'erreur des serveurs ce qui paraît fidèle à la réalite. De même pour l'axe 2 qui est fortement corrélé à reeror_rate et srv_rerror_rate.
+
+```{r, echo=FALSE}
+m <- cor(data[,c(-2,-3,-4,-38)])
+corrplot(m)
+```
+Maintenant, on va regarder les corrélations inter-variables afin de voir si nous pouvons alléger notre jeu de données. On va utiliser la bibliothèque (lares) pour cela.
+
+```{r, echo=FALSE}
+library(lares)
+
+corr_cross(data[,c(-2,-3,-4,-38)], # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 20 # display top 10 couples of variables (by correlation coefficient)
+)
+```
+Nous voyons grâce à ce graph que certaines variables sont très corrélées. Par exemple, num_compromised et num_root ont une corrélation de 99.9%, il est clair que nous allons pouvoir en enlever une des deux.
+
 
 
 
@@ -147,9 +203,9 @@ valid2$class <- ifelse(valid2$class == "normal", 1, 0)
 
 Notre première approche sera la classification non supervisée.
 
-Tout d'abord, les variables du dataset on des unités différentes donc nous devons centrer et réduire les données afin de ne pas créer d'écarts de poids inter-variables.
+Tout d'abord, les variables du dataset on des unités différentes donc nous devons centrer et réduire les données afin de ne pas créer d'écarts de poids inter-variables. De plus, comme nous allons ici travailler sur des méthodes de clustering on va enlever la colonne class pour créer les clusters.
 
-```{r}
+```{r, echo=FALSE}
 
 set.seed(1)
 app2.cr <- scale(app[,c(1,3,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37)],center = TRUE, scale = TRUE)
@@ -157,24 +213,28 @@ app2.cr <- scale(app[,c(1,3,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,
 ## K-means
 
 Pour effectuer la méthode des k-means, nous précisons que nous voulons 2 classes car nous cherchons à déterminer si la connexion est malveillante ou non.
-```{r}
+```{r, echo = FALSE }
 kmean.result <- kmeans(app2.cr, centers = 2, nstart = 1000)
 app.kmean <- cbind.data.frame(app2.cr,classe=factor(kmean.result$cluster))
 
-catdes(app.kmean, num.var = 36)
+catdes.hmean <- catdes(app.kmean, num.var = 36)
 kmean.table <- table(app2$class,kmean.result$cluster)
-kmean.table
-kmean.accuracy <- (kmean.table[1,2]+kmean.table[2,1])/3000
+
+kmean.accuracy <- (kmean.table[1,2]+kmean.table[2,1])/nrow(app2)
 kmean.accuracy
 ```
 
-Nous pouvons voir que ce qui caractérise le plus les connexions normales sont des same_srv_rate et dst_host_same_srv_rate élevés alors que ce qui caractérise le plus les connexions malveillantes sont serror_rate, dst_host_srv_serror_rate et srv_serror_rate élevé ce qui paraît logique car un niveau d'erreur élevé du serveur client et host élevé sont souvent associés à un problème.
+Nous pouvons voir que ce qui caractérise le plus les connexions normales sont des same_srv_rate et dst_host_same_srv_rate élevés alors que ce qui caractérise le plus les connexions malveillantes sont serror_rate, dst_host_srv_serror_rate et srv_serror_rate élevé ce qui paraît logique car un niveau d'erreur élevé du serveur client et host élevé sont souvent associés à un problème et cela correspond aux resultats de l'ACP dans la première partie.
+
+Par ailleurs, on obtient une accuracy de 89% que l'on comparera plus tard afin de conclure quant aux performances de cette méthode.
 
 ##CAH
 
 Ici, nous implémenterons une classification non supervisée à l'aide du CAH (Variante des K-means utilisant une autre méthode pour creer ses clusters). Nous utiliserons la distance de Ward et encore une fois nous préciserons que nous voulons 2 clusters.
 
-```{r}
+On visualisera ci-dessous la création de nos deux clusters.
+```{r, echo= FALSE}
+set.seed(1)
 d.app2.cr <- dist(app2.cr)
 cah.ward <- hclust(d.app2.cr, method = "ward.D2")
 plot(cah.ward, hang =-1,main="ward.D2",labels=1:nrow(app2)) 
@@ -182,41 +242,31 @@ K <- 2
 rect.hclust(cah.ward,K)
 groups.cah <- cutree(cah.ward, K)
 cah.table <- table(app2$class,groups.cah)
-cah.table
-cah.accuracy <- 1 - (cah.table[1,1]+cah.table[2,2])/3000
+cah.accuracy <-(cah.table[1,1]+cah.table[2,2])/sum(cah.table)
+cah.accuracy <- max(cah.accuracy, 1-cah.accuracy)
 cah.accuracy
-
-
 ```
-
+Ici, on obtient une moins bonne accuracy que la méthode des K-means. On retiendra donc de la classification non-supervisée que les K-means apportent le meilleur résultat.
 
 # Classification supervisé
 
+Dans cette partie nous verrons différentes méthodes de classification supervisée vues en cours. On va dans un premier temps analyser les codes un par un et nous réserverons l'analyse des résultats en dernière partie.
 
 # a) Regression logistique 
 
 La régression logistique a pour but d'expliquer et de prédire les valeurs d'une variable qualitative (ici binaire), à partir de variables explicatives qualitatives et quantitatives
 
 
-```{r}
+```{r, echo=FALSE}
 #logit_complet <- glm(class~., data=app2, family=binomial)
 
 #logit_step <- step(logit_complet, direction = "backward")
 
-
 ```
-
-
-
-
-
-
-
-
 
 # b) LDA
 
-```{r}
+```{r, echo=FALSE,results = FALSE,results='hide',warning=FALSE}
 
 model.lda <- lda(class~.,data=app ) 
 
@@ -243,7 +293,7 @@ auc.lda
 
 # c) Arbre Optimal
 
-```{r}
+```{r, echo=FALSE,results = FALSE,warning=FALSE}
 
 set.seed(1)
 arbre <- rpart(class~. ,app,control=rpart.control(minsplit=5,cp=0))
@@ -252,7 +302,7 @@ plotcp(arbre)
 
 cp.opt <- arbre$cptable[which.min(arbre$cptable[, "xerror"]), "CP"] 
 arbre.opt <- prune(arbre,cp.opt) 
-rpart.plot(arbre.opt, type=4)
+#rpart.plot(arbre.opt, cex = 0.10)
 
 # prediction
 pred_arbre <- predict(arbre.opt,newdata=valid, type="class")
@@ -275,7 +325,7 @@ roc.aopt
 
 # d) random forest
 
-```{r}
+```{r, echo=FALSE,results = FALSE,warning=FALSE,fig.show='hide'}
 
 set.seed(1234)
 model.rf <- randomForest(class~.,data=app)
@@ -325,7 +375,7 @@ rownames(var.imp.df) <- NULL
 
 
 
-```{r}
+```{r, echo=FALSE,results = FALSE,warning=FALSE }
 library(gbm)
 mod.ada<-gbm(class~., data=app2, distribution="adaboost", shrinkage=0.01,n.trees=3000,cv.folds = 5)
 
@@ -334,7 +384,7 @@ print(mod.ada)
 
 prev.ada <- predict(mod.ada,newdata=valid,type = "response")
 prev.ada <- round(prev.ada)
-prev.ada
+
 accuracy.ada = mean(prev.ada==valid2$class)
 accuracy.ada
 
@@ -346,19 +396,13 @@ summary(mod.ada)[1:10,]
 
 ```
 
-```{r}
-valid2$class
-```
-
-
-
 # f) regression Logistique
 
-Retirer toutes les variables quantitatives
+Pour effectuer la regression logistique nous retirons toutes les variables quantitatives.
 
 
-```{r}
-library(glmnet)
+```{r, echo=FALSE,results = FALSE,warning=FALSE,fig.show='hide'}
+
 res_Lasso <- glmnet(as.matrix(app2[,c(-38,-2,-3,-4)]),app2$class,family = 'binomial')
 plot(res_Lasso , label = TRUE)
 plot(res_Lasso, xvar = "lambda", label = TRUE)
@@ -379,10 +423,11 @@ accuracy_logit_lasso
 
 
 
-# Comparaison
+# Comparaison et analyse des résultats
 
+On va rassembler tous nos résultats dans un tableau afin de visualiser plus facilement tout ce que nous venons de faire.
 
-```{r}
+```{r, echo=FALSE}
 result=matrix(NA, ncol=5, nrow=2)
 rownames(result)=c('accuracy', 'AUC')
 colnames(result)=c('lda','arbre optimal','random forest','adaboost','lasso')
@@ -391,8 +436,9 @@ result[2,]= c(roc.lda$auc,roc.aopt$auc, roc.rf$auc, roc.ada$auc, roc.lasso$auc )
 result
 ```
 
+Globalement, toutes les méthodes de classification supervisée ont de meilleurs résultats que la classification non supervisée. De plus, les résultats sont plus que satisfaisant on peut voir ici que la meilleur methode (RF) obtient une précision de 99.8% ce qui est bien au dela de nos attentes. On remarque aussi que la pire précision est a peu près égale à la meilleure précision en classification non-supervisée.
 
-```{r}
+```{r, echo=FALSE}
 plot(roc.lda,xlim=c(1,0))
 plot(roc.aopt, add=TRUE, col=2)
 plot(roc.rf, add=TRUE, col=3)
@@ -400,52 +446,5 @@ plot(roc.ada, add=TRUE, col=4)
 plot(roc.lasso,add=TRUE, col=5)
 legend('bottom', col=1:5, paste(c('lda','arbre optimal','random forest','adaboost','lasso')),lwd=1)
 
-```
-
-# ACP
-
-Nous observons un saut après la 2eme dimension, nous allons donc choisir 2 axes. Les 2 premiers axes expliquent 35.153% de l'inertie totale.
-
-
-
-```{r}
-res.pca <- PCA(app[,-38], quali.sup = c(2,3,4))
-barplot(res.pca$eig[,2],names=paste("Dim",1:nrow(res.pca$eig)))
-summary(res.pca, ncp=2)
-dimdesc(res.pca, proba = 0.2)
-
-```
-
-```{r}
-library(factoextra)
-var <- get_pca_var(res.pca)
-```
-
-
-```{r}
-library("corrplot")
-corr.acp <- corrplot(var$cos2, is.corr=FALSE)
-```
-
-
-
-```{r}
-fviz_pca_ind (res.pca,col.ind = app$class)
-```
-
-Nous observons que les connections anormals ont des valeurs plus élevées sur l'axe 1 et 2 . L'axe 1 est fortement corrélé à dst_host_srv_error_rate et host_srv_rerror_rate les connections anormales ont un taux plus élevé d'erreur des serveurs ce qui paraît fidèle à la réalite. De même pour l'axe 2 qui est fortement corrélé à reeror_rate et srv_rerror_rate.
-
-```{r}
-m <- cor(data[,c(-2,-3,-4,-38)])
-corrplot(m)
-```
-
-```{r}
-library(lares)
-
-corr_cross(data[,c(-2,-3,-4,-38)], # name of dataset
-  max_pvalue = 0.05, # display only significant correlations (at 5% level)
-  top = 20 # display top 10 couples of variables (by correlation coefficient)
-)
 ```
 
